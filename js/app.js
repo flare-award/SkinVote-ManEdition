@@ -11,14 +11,18 @@ import {
   supportsFsAccess,
 } from "./files.js";
 import { captureThumb, createAttachedViewer, disposeThumbEngine, thumbPlaceholder } from "./viewer.js";
+import {
+  CATEGORIES,
+  CATEGORY_KEYS,
+  categorySlug,
+  emptyRatings,
+  pluralCategories,
+} from "./categories.js";
 
-const CATEGORIES = [
-  { key: "red", label: "Красный цвет" },
-  { key: "blue", label: "Синий цвет" },
-  { key: "logoFront", label: "Лого спереди" },
-  { key: "logoBack", label: "Лого взади" },
-  { key: "lenses", label: "Линзы" },
-];
+// Минимальное значение фильтра по категории (0 = «любое»).
+function zeroFilters() {
+  return emptyRatings(0);
+}
 
 const state = {
   skins: [],
@@ -37,7 +41,7 @@ const state = {
     query: "",
     minScore: null,
     maxScore: null,
-    min: { red: 0, blue: 0, logoFront: 0, logoBack: 0, lenses: 0 },
+    min: zeroFilters(),
   },
 };
 
@@ -91,11 +95,10 @@ const els = {
   boardSearch: document.getElementById("board-search"),
   boardMinScore: document.getElementById("board-min-score"),
   boardMaxScore: document.getElementById("board-max-score"),
-  filterRed: document.getElementById("filter-red"),
-  filterBlue: document.getElementById("filter-blue"),
-  filterLogoFront: document.getElementById("filter-logo-front"),
-  filterLogoBack: document.getElementById("filter-logo-back"),
-  filterLenses: document.getElementById("filter-lenses"),
+  // Селекты «минимум по категории» строятся динамически из CATEGORIES.
+  categoryFilters: document.getElementById("category-filters"),
+  lbHead: document.getElementById("lb-head"),
+  rateKickerCats: document.getElementById("rate-kicker-cats"),
   btnResetFilters: document.getElementById("btn-reset-filters"),
   // Tiebreaker
   tiebreakInfo: document.getElementById("tiebreak-info"),
@@ -117,6 +120,8 @@ const els = {
 };
 
 let rateHandle = null;
+// key категории -> select фильтра «минимум по категории».
+const categoryFilterSelects = new Map();
 const podiumHandles = [];
 let podiumRenderToken = 0;
 let toastTimer = 0;
@@ -322,6 +327,70 @@ function paintStars(row, value, preview) {
   });
 }
 
+// --- Контролы, которые строятся из набора категорий ---
+
+function buildRateKicker() {
+  const count = CATEGORIES.length;
+  els.rateKickerCats.textContent = `${count} ${pluralCategories(count)}`;
+}
+
+// Сортировка таблицы лидеров: «Общая оценка» + по одной опции на категорию.
+function buildSortOptions() {
+  els.boardSort.replaceChildren(
+    ...[{ key: "total", label: "Общая оценка" }, ...CATEGORIES].map((item) => {
+      const option = document.createElement("option");
+      option.value = item.key;
+      option.textContent = item.label;
+      return option;
+    }),
+  );
+  // Если сохранённый ключ больше не существует — возвращаемся к общей оценке.
+  const known = [...els.boardSort.options].some((option) => option.value === state.sortKey);
+  if (!known) state.sortKey = "total";
+  els.boardSort.value = state.sortKey;
+}
+
+// Фильтр «минимум по категории»: по селекту на категорию, ключи — из CATEGORIES.
+function buildCategoryFilters() {
+  categoryFilterSelects.clear();
+  const fragment = document.createDocumentFragment();
+  for (const cat of CATEGORIES) {
+    const id = `filter-${categorySlug(cat.key)}`;
+    const wrapper = document.createElement("label");
+    wrapper.setAttribute("for", id);
+
+    const caption = document.createElement("span");
+    caption.textContent = `${cat.label} ≥`;
+
+    const select = document.createElement("select");
+    select.id = id;
+    for (let value = 0; value <= 10; value += 1) {
+      const option = document.createElement("option");
+      option.value = String(value);
+      option.textContent = value === 0 ? "Любое" : String(value);
+      select.append(option);
+    }
+    select.addEventListener("change", () => updateCategoryFilter(cat.key, select.value));
+
+    categoryFilterSelects.set(cat.key, select);
+    wrapper.append(caption, select);
+    fragment.append(wrapper);
+  }
+  els.categoryFilters.replaceChildren(fragment);
+}
+
+// Шапка таблицы лидеров: Место / Скин / Итог / категории… / действия.
+function buildTableHead() {
+  const labels = ["Место", "Скин", "Итог", ...CATEGORIES.map((cat) => cat.label), ""];
+  els.lbHead.replaceChildren(
+    ...labels.map((text) => {
+      const th = document.createElement("th");
+      th.textContent = text;
+      return th;
+    }),
+  );
+}
+
 function refreshRatePanel() {
   const skin = currentSkin();
   if (!skin) return;
@@ -460,7 +529,7 @@ function matchesFilters(row) {
   if (total == null) return false;
   if (f.minScore != null && total < f.minScore) return false;
   if (f.maxScore != null && total > f.maxScore) return false;
-  for (const key of ["red", "blue", "logoFront", "logoBack", "lenses"]) {
+  for (const key of CATEGORY_KEYS) {
     if (f.min[key] > 0 && (row.skin.ratings[key] ?? 0) < f.min[key]) return false;
   }
   return true;
@@ -484,16 +553,12 @@ function resetBoardFilters() {
     query: "",
     minScore: null,
     maxScore: null,
-    min: { red: 0, blue: 0, logoFront: 0, logoBack: 0, lenses: 0 },
+    min: zeroFilters(),
   };
   els.boardSearch.value = "";
   els.boardMinScore.value = "";
   els.boardMaxScore.value = "";
-  els.filterRed.value = "0";
-  els.filterBlue.value = "0";
-  els.filterLogoFront.value = "0";
-  els.filterLogoBack.value = "0";
-  els.filterLenses.value = "0";
+  for (const select of categoryFilterSelects.values()) select.value = "0";
 }
 
 function syncBoardFilters() {
@@ -501,11 +566,9 @@ function syncBoardFilters() {
   els.boardSearch.value = f.query;
   els.boardMinScore.value = f.minScore == null ? "" : String(f.minScore);
   els.boardMaxScore.value = f.maxScore == null ? "" : String(f.maxScore);
-  els.filterRed.value = String(f.min.red);
-  els.filterBlue.value = String(f.min.blue);
-  els.filterLogoFront.value = String(f.min.logoFront);
-  els.filterLogoBack.value = String(f.min.logoBack);
-  els.filterLenses.value = String(f.min.lenses);
+  for (const [key, select] of categoryFilterSelects) {
+    select.value = String(f.min[key] ?? 0);
+  }
 }
 
 function disposePodium() {
@@ -709,7 +772,8 @@ async function renderLeaderboard() {
 function renderTable(ranked, allRanked = ranked) {
   if (!ranked.length) {
     const empty = document.createElement("tr");
-    empty.innerHTML = `<td colspan="9" class="table-empty">Ничего не найдено по фильтрам</td>`;
+    // Место + Скин + Итог + категории + действия.
+    empty.innerHTML = `<td colspan="${CATEGORIES.length + 4}" class="table-empty">Ничего не найдено по фильтрам</td>`;
     els.lbBody.replaceChildren(empty);
     return;
   }
@@ -720,6 +784,10 @@ function renderTable(ranked, allRanked = ranked) {
       const place = places.get(row.skin.id) ?? i + 1;
       const tr = document.createElement("tr");
       const badgeClass = place === 1 ? "gold" : place === 2 ? "silver" : place === 3 ? "bronze" : "";
+      // Столбцы категорий — по одному на каждую категорию, в порядке CATEGORIES.
+      const categoryCells = CATEGORY_KEYS.map(
+        (key) => `<td class="cat-cell" data-key="${key}">${row.skin.ratings[key] ?? "—"}</td>`,
+      ).join("");
       tr.innerHTML = `
         <td><span class="place-badge ${badgeClass}">${place}</span></td>
         <td>
@@ -731,11 +799,7 @@ function renderTable(ranked, allRanked = ranked) {
           </div>
         </td>
         <td class="score-strong">${formatScore(row.score < 0 ? null : row.score)}</td>
-        <td>${row.skin.ratings.red ?? "—"}</td>
-        <td>${row.skin.ratings.blue ?? "—"}</td>
-        <td>${row.skin.ratings.logoFront ?? "—"}</td>
-        <td>${row.skin.ratings.logoBack ?? "—"}</td>
-        <td>${row.skin.ratings.lenses ?? "—"}</td>
+        ${categoryCells}
         <td>
           <button type="button" class="icon-btn" aria-label="Открыть расположение файла" title="Открыть папку">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -865,6 +929,8 @@ function renderDetailCategories(skin) {
     ...CATEGORIES.map((cat) => {
       const row = document.createElement("div");
       row.className = "detail-category";
+      // data-key даёт строке цвет категории (--cat-color из css/app.css).
+      row.dataset.key = cat.key;
       row.innerHTML = `<span><i class="swatch"></i>${cat.label}</span><strong></strong>`;
       row.querySelector("strong").textContent = skin.ratings[cat.key] ?? "—";
       return row;
@@ -979,6 +1045,11 @@ function newSession() {
 
 // --- Экспорт / импорт оценок ---
 
+// Версия формата: 2 — текущий набор категорий (волосы, глаза, лицо, шейдинг кожи,
+// одежда сверху/снизу, обувь). В файле дублируется список ключей категорий,
+// чтобы импорт мог честно сказать о несовпадении с текущим набором.
+const EXPORT_VERSION = 2;
+
 function freshId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return `skin-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -991,18 +1062,15 @@ function exportRatings() {
     return;
   }
   const data = {
-    version: 1,
+    version: EXPORT_VERSION,
     date: new Date().toISOString(),
+    categories: CATEGORY_KEYS.slice(),
     skins: state.skins.map((s) => {
-      const ratings = s.skipped
-        ? { red: null, blue: null, logoFront: null, logoBack: null, lenses: null }
-        : {
-            red: s.ratings.red ?? null,
-            blue: s.ratings.blue ?? null,
-            logoFront: s.ratings.logoFront ?? null,
-            logoBack: s.ratings.logoBack ?? null,
-            lenses: s.ratings.lenses ?? null,
-          };
+      // Пропущенные скины сохраняются без оценок, остальные — по всем категориям.
+      const ratings = CATEGORY_KEYS.reduce((acc, key) => {
+        acc[key] = s.skipped ? null : (s.ratings[key] ?? null);
+        return acc;
+      }, {});
       return {
         name: s.name,
         relativePath: s.relativePath,
@@ -1036,7 +1104,9 @@ function parseSession(text) {
   if (!data || typeof data !== "object" || !Array.isArray(data.skins)) {
     throw new Error("Неверная структура файла: ожидается объект со списком skins");
   }
-  const keys = ["red", "blue", "logoFront", "logoBack", "lenses"];
+  // Ключи категорий, которые реально встречаются в файле: нужны, чтобы
+  // предупредить о файле, сохранённом для другого набора категорий.
+  const fileKeys = new Set();
   const skins = data.skins.map((raw, i) => {
     if (!raw || typeof raw !== "object") {
       throw new Error(`Скин #${i + 1}: неверная запись`);
@@ -1046,8 +1116,9 @@ function parseSession(text) {
     const model = raw.model === "slim" ? "slim" : "wide";
     const skipped = !!raw.skipped;
     const inRatings = raw.ratings && typeof raw.ratings === "object" ? raw.ratings : {};
+    Object.keys(inRatings).forEach((key) => fileKeys.add(key));
     const ratings = {};
-    for (const k of keys) {
+    for (const k of CATEGORY_KEYS) {
       const v = inRatings[k];
       ratings[k] = Number.isFinite(v) && v >= 0 && v <= 10 ? Number(v) : null;
     }
@@ -1072,8 +1143,16 @@ function parseSession(text) {
   return {
     version: Number(data.version) || 1,
     date: typeof data.date === "string" ? data.date : null,
+    // v2 пишет список категорий явно; у более старых файлов берём его из оценок.
+    categories: Array.isArray(data.categories) ? data.categories.map((key) => String(key)) : [...fileKeys],
     skins,
   };
+}
+
+// Категории, которых нет в загружаемом файле, — по ним оценки останутся пустыми.
+function missingCategories(session) {
+  const known = new Set(Array.isArray(session.categories) ? session.categories : []);
+  return CATEGORIES.filter((cat) => !known.has(cat.key)).map((cat) => cat.label);
 }
 
 function formatSessionDate(iso) {
@@ -1158,11 +1237,18 @@ function showImportPreview(session) {
     : hasLoadedFiles
       ? "Совпадений с уже загруженными PNG не найдено; для скинов будут показаны плейсхолдеры."
       : "Если PNG не загружены, для скинов будут показаны плейсхолдеры вместо 3D-превью.";
+  const missing = missingCategories(session);
+  const missingHint = missing.length
+    ? `<p class="import-warning" style="margin-top:8px">Файл сохранён для другого набора категорий: нет оценок по «${missing
+        .map((label) => escapeAttr(label))
+        .join(", ")}» — они будут пустыми.</p>`
+    : "";
   els.importPreview.innerHTML = `
     <p class="muted">Сессия от <b>${formatSessionDate(session.date)}</b></p>
     <p>Скинов в файле: <b>${total}</b>${rated !== total ? ` (оценено ${rated}, пропущено ${skipped})` : ""}</p>
     ${sample ? `<p class="muted" style="margin-top:8px">Например: ${sample}${total > 4 ? "…" : ""}</p>` : ""}
     <p class="muted" style="margin-top:8px">${previewHint}</p>
+    ${missingHint}
     <p class="muted" style="margin-top:8px">Сразу откроется таблица лидеров.</p>
   `;
   if (typeof els.importDialog.showModal === "function") els.importDialog.showModal();
@@ -1312,7 +1398,12 @@ function updateCategoryFilter(key, value) {
 }
 
 function bindRate() {
+  // Всё, что зависит от набора категорий, строится из CATEGORIES один раз.
+  buildRateKicker();
   buildCategories();
+  buildSortOptions();
+  buildCategoryFilters();
+  buildTableHead();
   els.btnPrev.addEventListener("click", goPrev);
   els.btnNext.addEventListener("click", goNext);
   els.btnSkip.addEventListener("click", skipCurrent);
@@ -1332,15 +1423,7 @@ function bindRate() {
       renderTableOnly();
     });
   });
-  [
-    [els.filterRed, "red"],
-    [els.filterBlue, "blue"],
-    [els.filterLogoFront, "logoFront"],
-    [els.filterLogoBack, "logoBack"],
-    [els.filterLenses, "lenses"],
-  ].forEach(([select, key]) => {
-    select.addEventListener("change", () => updateCategoryFilter(key, select.value));
-  });
+  // Слушатели селектов «минимум по категории» навешиваются в buildCategoryFilters.
   els.btnResetFilters.addEventListener("click", () => {
     resetBoardFilters();
     renderTableOnly();
