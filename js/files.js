@@ -1,3 +1,5 @@
+import { emptyRatings } from "./categories.js";
+
 export function supportsFsAccess() {
   return typeof window.showOpenFilePicker === "function";
 }
@@ -155,7 +157,7 @@ export async function inspectSkinFile(entry) {
         fileHandle: entry.fileHandle || null,
         dirHandle: entry.dirHandle || null,
         model: detectSkinModel(img, width, height),
-        ratings: { red: null, blue: null, logoFront: null, logoBack: null, lenses: null },
+        ratings: emptyRatings(),
         thumb: null,
         note: "",
         skipped: false,

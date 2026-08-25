@@ -159,7 +159,7 @@
             <div class="panel-kicker">
               <span id="rate-progress">Скин 1 из 1</span>
               <span class="kicker-dot" aria-hidden="true"></span>
-              <span>пять категорий</span>
+              <span id="rate-kicker-cats">7 категорий</span>
             </div>
 
             <div id="categories" class="categories"></div>
@@ -194,14 +194,8 @@
           <div class="board-actions">
             <label class="sort-control" for="board-sort">
               <span>Сортировка</span>
-              <select id="board-sort" aria-label="Сортировка таблицы лидеров">
-                <option value="total">Общая оценка</option>
-                <option value="red">Красный цвет</option>
-                <option value="blue">Синий цвет</option>
-                <option value="logoFront">Лого спереди</option>
-                <option value="logoBack">Лого взади</option>
-                <option value="lenses">Линзы</option>
-              </select>
+              <!-- Опции строятся в js/app.js: «Общая оценка» + все категории. -->
+              <select id="board-sort" aria-label="Сортировка таблицы лидеров"></select>
             </label>
             <button
               type="button"
@@ -266,88 +260,8 @@
 
           <fieldset class="filter-field filter-categories">
             <legend class="filter-label">Минимум по категории</legend>
-            <div class="category-filters">
-              <label for="filter-red">
-                <span>Красный ≥</span>
-                <select id="filter-red">
-                  <option value="0">Любое</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                </select>
-              </label>
-              <label for="filter-blue">
-                <span>Синий ≥</span>
-                <select id="filter-blue">
-                  <option value="0">Любое</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                </select>
-              </label>
-              <label for="filter-logo-front">
-                <span>Лого спереди ≥</span>
-                <select id="filter-logo-front">
-                  <option value="0">Любое</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                </select>
-              </label>
-              <label for="filter-logo-back">
-                <span>Лого взади ≥</span>
-                <select id="filter-logo-back">
-                  <option value="0">Любое</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                </select>
-              </label>
-              <label for="filter-lenses">
-                <span>Линзы ≥</span>
-                <select id="filter-lenses">
-                  <option value="0">Любое</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                </select>
-              </label>
-            </div>
+            <!-- Селекты «минимум по категории» строятся в js/app.js из CATEGORIES. -->
+            <div class="category-filters" id="category-filters"></div>
           </fieldset>
 
           <button type="button" class="btn btn-text filter-reset" id="btn-reset-filters">Сбросить фильтры</button>
@@ -359,17 +273,8 @@
             <div class="table-scroll">
               <table class="lb-table">
                 <thead>
-                  <tr>
-                    <th>Место</th>
-                    <th>Скин</th>
-                    <th>Итог</th>
-                    <th>Красный</th>
-                    <th>Синий</th>
-                    <th>Лого спереди</th>
-                    <th>Лого взади</th>
-                    <th>Линзы</th>
-                    <th></th>
-                  </tr>
+                  <!-- Столбцы строятся в js/app.js: Место / Скин / Итог / категории / действия. -->
+                  <tr id="lb-head"></tr>
                 </thead>
                 <tbody id="lb-body"></tbody>
               </table>
